@@ -584,6 +584,8 @@ You've completed the SQL Mastery course. You now have the knowledge to:
 
 **What's Next:**
 - Complete all 5 exercises in the [exercises/](../exercises/) folder
+- [Lesson 17 — Roles, Users & Access Management](17-roles-users-and-access-management.md) — connect as an app, not as a superuser
+- [Lesson 18 — Connecting to PostgreSQL from Python](18-connecting-from-python.md) — wire this all up to real application code
 - Learn about replication and high availability
 - Explore Timescale for time-series data
 - Try PostGIS for geospatial queries

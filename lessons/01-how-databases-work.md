@@ -202,6 +202,37 @@ PostgreSQL server (process)
 - The default schema is `public`
 - You rarely need multiple schemas until you have a large project
 
+### Why Does a Table Need a Schema at All?
+
+A table can't just float inside a database with no container — it has to
+live in *some* schema. Every database comes with a default one called
+`public`, which is why a table you create without specifying a schema
+always shows up as `public.customers` in `\dt` output — Postgres put it
+there silently.
+
+Schemas exist as a namespace layer for three reasons:
+
+1. **Avoid name collisions.** Two parts of a system might both want a
+   table called `orders`. Without schemas that's a hard conflict; with
+   schemas you can have `sales.orders` and `warehouse.orders` — same
+   name, no clash.
+2. **Logical grouping without losing the ability to `JOIN`.** You can't
+   `JOIN` across separate *databases*, but you *can* `JOIN` across
+   schemas within the same database — so schemas let you organize a big
+   database into sections (`auth`, `billing`, `analytics`) while keeping
+   everything queryable together.
+3. **Access control boundary.** You can `GRANT`/`REVOKE` permissions at
+   the schema level — e.g., give a reporting role access to a `reporting`
+   schema's views while keeping a `raw_data` schema off-limits.
+
+For a small project, everything living in `public` is completely normal.
+Schemas only become worth reaching for once you deliberately want to
+organize a larger database into sections.
+
+```sql
+\dn        -- list schemas in the current database
+```
+
 ---
 
 ## Primary Key and Foreign Key — The Foundation of Relationships
