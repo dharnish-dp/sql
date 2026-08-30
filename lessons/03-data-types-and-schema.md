@@ -358,6 +358,10 @@ CREATE TABLE users (
 
 ### Table-Level Constraints (Better for Named Constraints and Composites)
 
+This example models `order_items` — the table holding **individual line
+items within an order**. If an order has 3 different products, this table
+has 3 rows, one per product in that order.
+
 ```sql
 CREATE TABLE order_items (
     id          BIGINT GENERATED ALWAYS AS IDENTITY,
@@ -380,23 +384,104 @@ CREATE TABLE order_items (
 );
 ```
 
-### Foreign Key Actions
+**The plain columns** are unremarkable: `id` auto-increments
+(`GENERATED ALWAYS AS IDENTITY`), `order_id` points at which order this
+line belongs to, `product_id` points at which product, `quantity` is how
+many units, `unit_price` is the price per unit (`NUMERIC(10, 2)` = up to
+10 total digits, 2 after the decimal).
+
+**Now the constraints — rules the database enforces on every row:**
 
 ```sql
--- ON DELETE / ON UPDATE options:
+CONSTRAINT order_items_pkey PRIMARY KEY (id),
+```
+`id` is the primary key — must be unique, identifies the row.
+`order_items_pkey` is just a **name** for this rule, so if it's ever
+violated, the error message references `order_items_pkey` instead of a
+generic message — easier to debug which constraint actually failed.
 
+```sql
+CONSTRAINT order_items_order_fkey FOREIGN KEY (order_id)
+    REFERENCES orders(id) ON DELETE CASCADE,
+CONSTRAINT order_items_product_fkey FOREIGN KEY (product_id)
+    REFERENCES products(id) ON DELETE RESTRICT,
+```
+Both are foreign keys — `order_id` must match a real `id` in `orders`,
+and `product_id` must match a real `id` in `products`. You can't insert a
+line item pointing at an order or product that doesn't exist. Each one
+also picks a different `ON DELETE` behavior — explained in detail below,
+since that's the part that trips people up most.
+
+```sql
+CONSTRAINT quantity_positive CHECK (quantity > 0),
+CONSTRAINT price_positive CHECK (unit_price >= 0),
+```
+**CHECK constraints** — plain conditions that must hold for every row.
+`INSERT ... quantity = -5` is rejected before it's ever saved; same for a
+negative `unit_price`.
+
+```sql
+CONSTRAINT unique_order_product UNIQUE (order_id, product_id)
+```
+A **composite unique constraint** — the *combination* of `order_id` and
+`product_id` must be unique, not either column alone. In plain English:
+the same product can't appear as two separate rows within the same order
+— you'd increase `quantity` on the existing row instead.
+
+### Foreign Key Actions — "What Happens to the Child Row When the Parent Disappears?"
+
+A foreign key creates a link — e.g., every `order_items` row points to
+one `orders` row. `ON DELETE` answers: **if that parent row gets deleted,
+what happens to the child rows that pointed to it?**
+
+```sql
 ON DELETE RESTRICT    -- Prevent deletion if referenced rows exist (default)
-ON DELETE CASCADE     -- Delete child rows when parent is deleted
-ON DELETE SET NULL    -- Set FK column to NULL when parent is deleted
-ON DELETE SET DEFAULT -- Set FK column to default value
-ON DELETE NO ACTION   -- Like RESTRICT but checked at end of transaction
+```
+Postgres **refuses** the delete outright: "you can't delete this order —
+it still has line items attached, delete those first."
 
+```sql
+ON DELETE CASCADE     -- Delete child rows when parent is deleted
+```
+Deleting the parent **automatically deletes** every child row too, no
+error — it cleans up after itself.
+```sql
 -- Example: delete an order → all its items are deleted automatically
 order_id INT REFERENCES orders(id) ON DELETE CASCADE
+```
+Used here because a line item with no order is meaningless on its own.
 
+```sql
+ON DELETE SET NULL    -- Set FK column to NULL when parent is deleted
+```
+The child row **survives**, but the link is cleared to `NULL`.
+```sql
 -- Example: delete a customer → set orders.customer_id to NULL
 customer_id INT REFERENCES customers(id) ON DELETE SET NULL
 ```
+The order record isn't deleted just because the customer account was —
+it becomes an orphaned/anonymized order instead.
+
+```sql
+ON DELETE SET DEFAULT -- Set FK column to default value
+```
+Same idea as `SET NULL`, but resets to a defined default value instead of
+`NULL`.
+
+```sql
+ON DELETE NO ACTION   -- Like RESTRICT but checked at end of transaction
+```
+Functionally almost identical to `RESTRICT` — the difference is just
+*when* the check runs (it can be deferred until the transaction commits),
+which rarely matters for everyday use.
+
+**Why this example uses `CASCADE` for `order_id` but `RESTRICT` for
+`product_id` — the actual design decision buried in the code above:**
+- Delete an order → its line items go with it (`CASCADE`) — they have no
+  purpose without the order.
+- Try to delete a product that's been ordered → blocked (`RESTRICT`) —
+  you don't want deleting a catalog item to silently corrupt historical
+  sales records.
 
 ---
 

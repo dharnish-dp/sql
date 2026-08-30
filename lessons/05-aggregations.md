@@ -346,10 +346,56 @@ GROUP BY category;
 
 ## ROLLUP — Subtotals and Grand Total
 
-ROLLUP produces subtotals at each level of grouping plus a grand total.
+### Start with what plain GROUP BY gives you
 
 ```sql
--- Sales by country and city, with subtotals
+SELECT country, city, COUNT(*) AS customers
+FROM customers
+GROUP BY country, city;
+
+-- US    | New York       | 2
+-- US    | San Francisco  | 1
+-- US    | Chicago        | 1
+-- UK    | London         | 2
+```
+
+This only gives you the **most detailed level** — one row per exact
+`country + city` combination. There's no row telling you "how many
+customers in the US overall," or "how many customers total." You'd have
+to run separate queries for those, then stitch the results together
+yourself.
+
+### What ROLLUP actually does
+
+Think of `country, city` as a **hierarchy** — city sits inside country,
+country sits inside "everything." `ROLLUP` walks back up that hierarchy
+one level at a time, generating a subtotal row at each level, ending in
+one grand-total row.
+
+For `ROLLUP(country, city)`, it's exactly equivalent to running three
+separate `GROUP BY` queries and stacking their results with `UNION ALL`:
+
+```sql
+-- Level 1: full detail, grouped by both columns
+SELECT country, city, COUNT(*) FROM customers GROUP BY country, city
+
+UNION ALL
+
+-- Level 2: one step up — grouped by country only (city collapsed)
+SELECT country, NULL, COUNT(*) FROM customers GROUP BY country
+
+UNION ALL
+
+-- Level 3: all the way up — nothing grouped, grand total
+SELECT NULL, NULL, COUNT(*) FROM customers;
+```
+
+`ROLLUP` just does all three passes for you in one query, and uses
+`NULL` to mark "this column was collapsed at this row" — `NULL` doesn't
+mean "no city," it means **"this row is a subtotal that no longer
+breaks things down by city."**
+
+```sql
 SELECT
     country,
     city,
@@ -357,18 +403,33 @@ SELECT
 FROM customers
 GROUP BY ROLLUP(country, city)
 ORDER BY country NULLS LAST, city NULLS LAST;
+```
 
--- Output:
--- US    | New York       | 2    ← city-level subtotal
--- US    | San Francisco  | 1
--- US    | Chicago        | 1
--- US    | NULL           | 4    ← country-level subtotal
--- UK    | London         | 2
--- UK    | NULL           | 2
--- ...
--- NULL  | NULL           | 10   ← grand total
+| country | city | customers | What this row means |
+|---|---|---|---|
+| US | New York | 2 | Detail row — exact country+city |
+| US | San Francisco | 1 | Detail row |
+| US | Chicago | 1 | Detail row |
+| US | **NULL** | **4** | Subtotal — all US customers, city collapsed (2+1+1) |
+| UK | London | 2 | Detail row |
+| UK | **NULL** | **2** | Subtotal — all UK customers |
+| **NULL** | **NULL** | **10** | Grand total — everything collapsed |
 
--- Revenue rollup
+**How to read any row:** the further left a `NULL` appears, the higher
+up the hierarchy that row's total is. A `NULL` in `city` only = "summed
+across all cities in that country." `NULL` in both = "summed across
+everything."
+
+**Why the column order in `ROLLUP(country, city)` matters:** ROLLUP
+collapses columns **right to left**. `ROLLUP(country, city)` gives you
+subtotals by country, then a grand total — never a subtotal by city
+alone (that would require `city` to collapse before `country`, which
+isn't how the hierarchy was declared). If you wrote `ROLLUP(city, country)`
+instead, you'd get city-level subtotals and no country-level ones — the
+order encodes which column is the "outer" grouping.
+
+```sql
+-- Another example: revenue rollup by category, then product name
 SELECT
     category,
     name,
@@ -376,6 +437,7 @@ SELECT
 FROM products
 GROUP BY ROLLUP(category, name)
 ORDER BY category NULLS LAST, name NULLS LAST;
+-- Detail rows per product → subtotal per category → grand total
 ```
 
 ---

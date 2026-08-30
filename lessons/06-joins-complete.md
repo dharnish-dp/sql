@@ -72,6 +72,21 @@ ORDER BY c.name, o.order_date;
 -- INNER JOIN excludes:
 -- Customers with no orders (customer 3, Carol — no order record)
 -- Orders with no matching customer (order 4 — customer_id=5 doesn't exist)
+```
+
+**Output**, using the sample data from the diagram above:
+
+| customer_name | order_id | total |
+|---|---|---|
+| Alice | 1 | 999.99 |
+| Alice | 2 | 49.99 |
+| Bob | 3 | 129.99 |
+
+Carol is gone (no matching order). Order 4 is gone (no matching customer,
+`customer_id = 5` doesn't exist). Only rows that matched **on both sides**
+survive.
+
+```sql
 
 -- Join with filter
 SELECT c.name, o.total
@@ -106,6 +121,22 @@ ORDER BY c.name;
 
 -- Customers with no orders have NULL in the order columns:
 -- Carol White | NULL | NULL | NULL
+```
+
+**Output:**
+
+| customer_name | order_id | total | status |
+|---|---|---|---|
+| Alice | 1 | 999.99 | delivered |
+| Alice | 2 | 49.99 | pending |
+| Bob | 3 | 129.99 | delivered |
+| Carol | NULL | NULL | NULL |
+
+Every customer appears at least once — Carol shows up with `NULL`s
+instead of disappearing like she did with `INNER JOIN`. Order 4
+(`customer_id = 5`) still doesn't appear — it's not in the *left* table.
+
+```sql
 
 -- Find customers who have NEVER ordered:
 SELECT c.name, c.email
@@ -153,6 +184,20 @@ FROM orders o
 LEFT JOIN customers c ON o.customer_id = c.id;
 ```
 
+**Output** (either query above produces this):
+
+| customer_name | order_id | total |
+|---|---|---|
+| Alice | 1 | 999.99 |
+| Alice | 2 | 49.99 |
+| Bob | 3 | 129.99 |
+| NULL | 4 | 299.99 |
+
+Now it's flipped from `LEFT JOIN` — every **order** appears, including
+order 4 whose `customer_id = 5` doesn't exist (`customer_name` is
+`NULL`). Carol doesn't appear at all — she's not in the *right* table's
+matches, and `RIGHT JOIN` only guarantees every right-table row survives.
+
 ---
 
 ## FULL OUTER JOIN — All Rows from Both Tables
@@ -182,6 +227,21 @@ WHERE c.id IS NULL OR o.id IS NULL;
 -- Rows where customer has no order AND orders with no customer
 ```
 
+**Output of the first query** — every customer AND every order, matched
+where possible:
+
+| customer_name | order_id | total |
+|---|---|---|
+| Alice | 1 | 999.99 |
+| Alice | 2 | 49.99 |
+| Bob | 3 | 129.99 |
+| Carol | NULL | NULL |
+| NULL | 4 | 299.99 |
+
+This is `LEFT JOIN` and `RIGHT JOIN` combined — Carol survives (no
+matching order) *and* order 4 survives (no matching customer). Nothing
+from either table is dropped.
+
 ---
 
 ## CROSS JOIN — Every Combination
@@ -200,6 +260,24 @@ CROSS JOIN products p;
 
 -- Implicit CROSS JOIN (comma syntax — avoid this)
 SELECT c.name, p.name FROM customers c, products p;
+```
+
+**Output**, with just 2 customers and 2 products to keep it readable —
+every customer paired with every product, 2 × 2 = 4 rows:
+
+| name | product |
+|---|---|
+| Alice | Laptop |
+| Alice | Mouse |
+| Bob | Laptop |
+| Bob | Mouse |
+
+No `ON` condition, no matching logic — it's pure combination. This is
+why `CROSS JOIN` explodes fast: 10 customers × 10 products = 100 rows,
+100 × 100 = 10,000 rows. Only use it deliberately (report grids, date
+series generation below), never by accident.
+
+```sql
 
 -- When is CROSS JOIN useful?
 -- 1. Generate all possible combinations for a report
@@ -245,6 +323,25 @@ SELECT
 FROM employees e
 LEFT JOIN employees m ON e.manager_id = m.id   -- LEFT so top-level managers appear
 ORDER BY m.name NULLS FIRST, e.name;
+```
+
+**Output** — the same `employees` table plays two roles at once: `e` is
+"the employee," `m` is "that employee's manager," matched via
+`e.manager_id = m.id`:
+
+| employee | department | salary | manager_name | manager_salary |
+|---|---|---|---|---|
+| Grace (CEO) | Exec | 250000 | NULL | NULL |
+| Alice | Engineering | 95000 | Grace | 250000 |
+| Dan | Engineering | 88000 | Alice | 95000 |
+| Bob | Sales | 70000 | Grace | 250000 |
+
+Grace has no manager (`manager_id` is `NULL`), so `LEFT JOIN` keeps her
+row with `NULL` manager columns instead of dropping her — this is the
+same "keep the row, NULL the missing side" behavior as any other
+`LEFT JOIN`, just applied to a table joined against itself.
+
+```sql
 
 -- Find employees who earn more than their manager
 SELECT
