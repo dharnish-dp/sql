@@ -389,6 +389,38 @@ ORDER BY ep.price DESC;
 Recursive CTEs can traverse trees and graphs: org charts, folder structures,
 bill of materials, category hierarchies.
 
+### How a Recursive CTE Actually Executes — the Mental Model
+
+Every `WITH RECURSIVE` has exactly the same shape, and Postgres runs it
+the same way every time, step by step:
+
+```sql
+WITH RECURSIVE name AS (
+    <base case>      -- runs ONCE, produces the starting rows
+    UNION ALL
+    <recursive case>  -- runs REPEATEDLY, using only the PREVIOUS iteration's rows
+)
+SELECT ... FROM name;
+```
+
+1. **Base case runs once.** Its output becomes "iteration 1" of the result.
+2. **Recursive case runs next**, but it only sees the rows produced by the
+   *immediately previous* iteration (not the full accumulated result) —
+   it references the CTE's own name, but that name means "just what the
+   last round produced."
+3. Whatever the recursive case outputs becomes the next iteration's rows,
+   and gets appended to the final result via `UNION ALL`.
+4. **This repeats** — each round feeding the next — **until the recursive
+   case produces zero rows.** That's the only stop condition; there's no
+   separate "loop counter." A `WHERE` clause inside the recursive case
+   (like `WHERE n < 20`) is what eventually makes it produce zero rows —
+   remove it, and it would recurse forever.
+5. The final result is every iteration's output, stacked together.
+
+Keep that "one round feeds the next, stop at zero rows" model in mind for
+every example below — it's the same mechanism whether you're climbing an
+org chart or counting Fibonacci numbers.
+
 ```sql
 WITH RECURSIVE org_chart AS (
     -- Base case: top-level employees (no manager)
@@ -449,6 +481,35 @@ WITH RECURSIVE fib(n, a, b) AS (
 SELECT n, a AS fibonacci_number FROM fib;
 ```
 
+**`fib(n, a, b)` just names the three output columns** of the CTE — think
+of `n` as "which step we're on," and `a`/`b` as two rolling values being
+carried forward each round (`a` is the Fibonacci number so far, `b` is
+the *next* one being built up).
+
+Trace it round by round, applying the model above:
+
+| Round | Rule applied | n | a | b |
+|---|---|---|---|---|
+| Base case (runs once) | `SELECT 0, 0, 1` | 0 | 0 | 1 |
+| Recursive round 1 | takes n=0,a=0,b=1 → outputs `n+1, b, a+b` | 1 | 1 | 1 |
+| Recursive round 2 | takes n=1,a=1,b=1 → outputs `n+1, b, a+b` | 2 | 1 | 2 |
+| Recursive round 3 | takes n=2,a=1,b=2 → outputs `n+1, b, a+b` | 3 | 2 | 3 |
+| Recursive round 4 | takes n=3,a=2,b=3 → outputs `n+1, b, a+b` | 4 | 3 | 5 |
+| ... | ...continues... | ... | ... | ... |
+| Recursive round 20 | | 20 | 6765 | ... |
+| Recursive round 21 | `WHERE n < 20` fails (n is 20, not < 20) → **outputs 0 rows** | — | — | — |
+
+Round 21 producing zero rows is what stops it — per step 4 of the model.
+The final `SELECT n, a AS fibonacci_number FROM fib` then just reads off
+the `a` column from every round that was ever produced: `0, 1, 1, 2, 3,
+5, 8, 13, 21, ...` — the familiar Fibonacci sequence, one number per
+round.
+
+**Why carry two values (`a` and `b`) instead of one?** Each Fibonacci
+number is the sum of the *previous two*. A single rolling value can't
+"remember" two numbers back — so `b` exists purely to smuggle "the next
+number" forward into the following round, where it becomes the new `a`.
+
 ### Recursive CTE — Date Series
 
 ```sql
@@ -463,6 +524,22 @@ WITH RECURSIVE dates AS (
 )
 SELECT d AS date FROM dates;
 ```
+
+Same mechanism, much simpler — only one rolling value (`d`) instead of
+three:
+
+| Round | Rule applied | d |
+|---|---|---|
+| Base case (runs once) | `SELECT '2024-01-01'::DATE` | 2024-01-01 |
+| Recursive round 1 | takes d=2024-01-01 → outputs `d + 1` | 2024-01-02 |
+| Recursive round 2 | takes d=2024-01-02 → outputs `d + 1` | 2024-01-03 |
+| ... | ...continues one day at a time... | ... |
+| Recursive round 30 | takes d=2024-01-30 → outputs `d + 1` | 2024-01-31 |
+| Recursive round 31 | `WHERE d < '2024-01-31'` fails (d is 2024-01-31, not less than itself) → **outputs 0 rows** | — |
+
+Stacking every round's single `d` value together gives you every date
+from Jan 1 to Jan 31 — a full month generated one recursive step at a
+time, with the `WHERE` clause as the only thing stopping it at the 31st.
 
 ---
 
