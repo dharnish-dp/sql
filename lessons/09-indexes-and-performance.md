@@ -721,6 +721,60 @@ stale, pre-load statistics in the meantime.
 
 ---
 
+## How to Read Any EXPLAIN Plan Yourself
+
+**Why you need this:** every EXPLAIN example so far in this lesson was
+decoded *for* you. Real queries you write later won't come with an
+explanation attached — this section is the repeatable procedure for
+reading a plan you've never seen before, on your own.
+
+### The Method
+
+**1. Find the indentation — that's the execution order.** The
+most-indented lines run **first**; less-indented lines run **after**,
+using the output of what's below them. Read bottom-to-top, then work
+back up.
+
+**2. For each node (line), pull out exactly 4 things:**
+```
+NodeType on table_or_index  (cost=X..Y rows=N width=W) (actual time=A..B rows=M loops=L)
+```
+
+| Ask | Where to look |
+|---|---|
+| What operation is this? | The node type (`Seq Scan`, `Index Scan`, `Hash Join`, `HashAggregate`...) |
+| Did it guess right? | Compare `rows=N` (estimate) to `rows=M` (actual, only with ANALYZE) |
+| Is this slow? | `actual time=A..B` — B is when this node finished |
+| How many times did this run? | `loops=L` — multiply time by this if >1 |
+
+**3. Add up where the time actually went.** Find the node whose `actual
+time` jumps the most compared to its children. That's your bottleneck —
+in a big plan, don't read every line with equal attention; find the
+expensive one first and start there.
+
+**4. Run this checklist against every node** — these five cover almost
+everything you'll encounter:
+
+| Red flag | What it means | Fix |
+|---|---|---|
+| `Seq Scan` on a **large** table | Missing index, or query matches too much of the table | Add an index, or accept it if selectivity is genuinely low |
+| Estimated `rows=N` far off from actual `rows=M` | Stale planner statistics | Run `ANALYZE table_name` |
+| One node's `actual time` much larger than the rest | That's your bottleneck | Focus optimization there, not elsewhere |
+| `Batches: 2` or more (on Hash/HashAggregate) | Hash table didn't fit in memory, spilled to disk | Increase `work_mem` |
+| `Sort ... Disk: N MB` | Sort overflowed to disk instead of memory | Increase `work_mem`, or add an index that avoids the sort entirely |
+
+**5. Ignore everything else on a first pass.** `Buffers`, exact `width`,
+`Planning Time` — useful for deep tuning, but not where you start. Get
+the 4 basics + the 5 red flags first; only dig further if something
+looks wrong.
+
+**Practice this on your own before moving on:** run `EXPLAIN ANALYZE` on
+any query against your own tables, and walk through steps 1–4 without
+looking anything up. The fastest way to confirm the method stuck is to
+apply it cold, on a plan you haven't seen explained already.
+
+---
+
 ## Practical EXPLAIN ANALYZE Workflow
 
 Putting everything in this lesson together into an actual diagnostic

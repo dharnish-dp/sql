@@ -121,6 +121,55 @@ ROLLBACK;
 -- Now we're back to before the BEGIN
 ```
 
+### Why ROLLBACK Has to Be a Separate, Explicit Command
+
+**A common assumption:** "if a query fails between `BEGIN` and `COMMIT`,
+surely everything just reverts automatically — why do I need to type
+`ROLLBACK` myself?" Postgres's actual behavior is more subtle than that.
+
+**What really happens when a statement fails mid-transaction:** Postgres
+does **not** silently undo anything. Instead, it marks the *entire
+transaction* as broken, but leaves it **open** — every further command
+you type gets rejected, until you explicitly issue `ROLLBACK` yourself.
+
+```sql
+BEGIN;
+INSERT INTO orders (customer_id, total) VALUES (1, 299.99);  -- succeeds
+INSERT INTO orders (customer_id, total) VALUES (999, 'bad');  -- FAILS
+
+-- Try anything else now:
+SELECT * FROM orders;
+```
+```
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+```
+
+The transaction is now stuck in this broken state — nothing works —
+**until you run `ROLLBACK;`**, which finally clears it and undoes
+everything since `BEGIN`.
+
+**Why Postgres is designed this way instead of auto-rolling-back:** if
+it silently reverted the instant any statement failed, your application
+would never get a chance to *decide* what to do — log the error, alert
+someone, inspect what went wrong. Leaving the transaction stuck-but-open
+forces something (you, or your app's error handling) to make an
+explicit decision.
+
+**A second, unrelated reason `ROLLBACK` needs to exist as its own
+command:** it's not only for error recovery. Every statement can succeed
+perfectly fine, and you can *still* decide to abandon the whole
+transaction on purpose:
+
+```sql
+BEGIN;
+UPDATE accounts SET balance = balance - 500 WHERE id = 1;  -- succeeds, no error
+-- App logic checks: "this would make balance negative — abort this transaction"
+ROLLBACK;
+```
+Nothing failed here — `ROLLBACK` is the deliberate "changed my mind, undo
+everything since BEGIN" command, independent of whether an error ever
+occurred.
+
 ### Autocommit Mode
 
 By default in PostgreSQL, every single statement runs in its own implicit transaction:
@@ -178,12 +227,123 @@ More isolation = more safety, but less concurrency (more locking/blocking).
 
 ### The Four Anomalies
 
+**Why you need this:** these four are ordered from mildest to most
+severe — each is a specific way that running two transactions *at the
+same time* can produce a result that wouldn't happen if they ran one
+after another. The isolation levels table right after this exists
+purely to say "this level blocks these anomalies, but not those" — so
+understanding each anomaly concretely is what makes that table make
+sense.
+
 | Anomaly | Description |
 |---------|-------------|
 | **Dirty Read** | Read uncommitted changes from another transaction (that might roll back) |
 | **Non-repeatable Read** | Same query returns different values within the same transaction |
 | **Phantom Read** | Same WHERE returns different rows within the same transaction |
 | **Serialization Anomaly** | Result inconsistent with any serial execution of transactions |
+
+#### 1. Dirty Read — reading data that was never actually saved
+
+You read a value another transaction changed but **hasn't committed
+yet** — then that transaction rolls back, meaning the value you read
+never really existed.
+
+**IMPORTANT — this is a HYPOTHETICAL, not what Postgres actually does.**
+The scenario below is what a *weaker* database engine (one that allows
+dirty reads) would do. Real Postgres, even at its weakest isolation
+level, blocks this — Transaction B always sees the OLD, committed value
+until A actually commits. The example exists only to show you what the
+anomaly *would* look like if it weren't prevented.
+
+```sql
+-- Transaction A:
+BEGIN;
+UPDATE accounts SET balance = 1000 WHERE id = 1;
+-- not committed yet
+
+-- Transaction B — HYPOTHETICAL ONLY, assuming a database that allows dirty reads:
+SELECT balance FROM accounts WHERE id = 1;   -- would see 1000 — a value that isn't final!
+
+-- Transaction A:
+ROLLBACK;   -- balance goes back to whatever it was before — 1000 never really happened
+```
+
+**What Transaction B actually sees in real Postgres, right now, in this
+exact scenario:**
+```sql
+-- Transaction B, for real, in Postgres:
+SELECT balance FROM accounts WHERE id = 1;   -- sees the OLD value — NOT 1000
+-- Postgres never lets you see another transaction's uncommitted changes,
+-- at any isolation level. The dirty read above cannot actually happen here.
+```
+Transaction B acted on a number that turned out to be fiction — the
+worst anomaly of the four. Postgres never allows this at all, even at
+its weakest isolation level.
+
+#### 2. Non-repeatable Read — an existing row you already read gets changed underneath you
+
+```sql
+-- Transaction A:
+BEGIN;
+SELECT total FROM orders WHERE id = 1;   -- reads 100.00
+
+-- (Transaction B commits: UPDATE orders SET total = 150.00 WHERE id = 1;)
+
+SELECT total FROM orders WHERE id = 1;   -- reads 150.00 — same row, changed value!
+COMMIT;
+```
+Inside **one single transaction**, the *same exact query* gave two
+different answers for the *same row* — because someone else's committed
+change slipped in between the two reads.
+
+#### 3. Phantom Read — a brand-new row appears (or disappears) that matches your filter
+
+```sql
+-- Transaction A:
+BEGIN;
+SELECT COUNT(*) FROM orders WHERE status = 'pending';   -- returns 5
+
+-- (Transaction B commits: INSERT INTO orders (..., status) VALUES (..., 'pending');)
+
+SELECT COUNT(*) FROM orders WHERE status = 'pending';   -- returns 6 — a new row showed up!
+COMMIT;
+```
+Nothing already seen *changed* — a row that didn't exist yet during the
+first read now satisfies the `WHERE` clause on the second read. The
+distinction from #2: non-repeatable read = an existing row's *value*
+changed; phantom read = the *set of matching rows itself* changed.
+
+#### 4. Serialization Anomaly — the combined result, not any single read, is the problem
+
+This one isn't about a single row or query going stale — it's about the
+**final combined result** of two transactions being something that
+**could never happen** if they'd run one at a time, in either order.
+
+```sql
+-- Rule: "total inventory across two warehouses must always be >= 0"
+-- Warehouse A has 10 units, Warehouse B has 10 units. Total = 20.
+
+-- Transaction A:                      Transaction B:
+BEGIN;                                 BEGIN;
+SELECT SUM(stock) FROM warehouses;     SELECT SUM(stock) FROM warehouses;
+-- sees total = 20, safe to remove 15  -- sees total = 20, safe to remove 15
+UPDATE warehouse_a SET stock = -5;     UPDATE warehouse_b SET stock = -5;
+COMMIT;                                COMMIT;
+```
+**Each transaction individually looked completely fine** — both checked
+the total, both saw 20, both concluded "removing 15 leaves 5, that's
+safe." But run **together**, the *combined* effect removes 30 units
+from a pool of 20 — impossible if either transaction had run to
+completion before the other started. Neither transaction did anything
+wrong individually; the *combination* is what's inconsistent with any
+possible one-at-a-time ordering.
+
+**Why this needs its own category:** anomalies #1–#3 are all about one
+transaction seeing *stale or shifting data*. A serialization anomaly can
+happen even when every individual read was perfectly accurate the whole
+time — the problem is purely the *combined outcome* of both
+transactions' writes, which is why only the strictest level,
+`SERIALIZABLE`, prevents it.
 
 ### PostgreSQL Isolation Levels
 
