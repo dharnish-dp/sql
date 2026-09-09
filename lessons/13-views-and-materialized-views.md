@@ -514,6 +514,64 @@ a fixed clock schedule (here, hourly, via the same cron syntax from
 changed in between. Simple, predictable, and the right default for most
 dashboards where "a few minutes/hours old" is perfectly acceptable.
 
+#### Installing `pg_cron` — Why It's Not Just `CREATE EXTENSION`
+
+**Why this is different from every other extension in this course:**
+`pg_trgm`, `uuid-ossp`, and the others ship *inside* Postgres already —
+`CREATE EXTENSION` just switches on a feature already sitting on disk.
+`pg_cron` is genuinely third-party code that must be **compiled against
+your exact Postgres version**, placed where Postgres can find it, and
+loaded via a config setting that only takes effect on a full server
+restart — you can't just run one command cold.
+
+**Steps for a Homebrew Postgres setup (from [Lesson 00](00-installing-postgresql.md)):**
+
+**1. Clone and build it against your specific Postgres install:**
+```bash
+git clone https://github.com/citusdata/pg_cron.git
+cd pg_cron
+make PG_CONFIG=$(brew --prefix postgresql@16)/bin/pg_config
+make install PG_CONFIG=$(brew --prefix postgresql@16)/bin/pg_config
+```
+`PG_CONFIG` must point at *your* Postgres version's `pg_config` tool —
+this is what makes the build match your server instead of some
+unrelated Postgres install.
+
+**2. Tell Postgres to load it at startup.** Find the config file:
+```sql
+SHOW config_file;
+```
+Edit that file (`postgresql.conf`) and add:
+```
+shared_preload_libraries = 'pg_cron'
+```
+**Why this needs a restart, not just a session command:** `pg_cron`
+runs a background worker process inside Postgres itself — that only
+works if it's loaded when Postgres *starts*, not turned on mid-session.
+
+**3. Restart Postgres to apply it:**
+```bash
+brew services restart postgresql@16
+```
+
+**4. Now enable the extension inside your database:**
+```sql
+CREATE EXTENSION pg_cron;
+```
+
+**5. Verify it's working:**
+```sql
+SELECT * FROM cron.job;   -- lists scheduled jobs, empty until you schedule one
+```
+
+**If this feels heavy for a learning database** — that reaction is
+fair. This is exactly why Option 2 below (a plain OS-level `cron` job
+calling `psql -c "REFRESH MATERIALIZED VIEW ..."`) is worth knowing: it
+achieves the identical result without touching Postgres's build or
+config at all. `pg_cron`'s extra setup cost mainly pays off on a managed
+production server, where you don't have OS-level cron access in the
+first place.
+
 ```sql
 -- Option 2: Trigger-based refresh (after each order)
 CREATE OR REPLACE FUNCTION refresh_product_sales()

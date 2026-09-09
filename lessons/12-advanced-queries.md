@@ -891,6 +891,67 @@ FROM employees;
 SELECT MODE() WITHIN GROUP (ORDER BY department) FROM employees;
 ```
 
+**Why you need this:** every aggregate you've used so far —
+`COUNT`/`SUM`/`AVG`/`MIN`/`MAX` ([Lesson 05](05-aggregations.md)) —
+takes a plain column and produces one number, with no internal ordering
+involved. This query introduces a different *kind* of aggregate — one
+whose calculation genuinely depends on the data's **sorted order**,
+which is why `WITHIN GROUP (ORDER BY ...)` looks unlike anything you've
+written before.
+
+**`STDDEV(salary)` and `VARIANCE(salary)`** — ordinary aggregates, same
+shape as `AVG`. Both measure "how spread out are the salaries from the
+average" — `VARIANCE` is the raw spread measure, `STDDEV` (standard
+deviation) is its square root, which is why it's in the same units as
+salary itself and easier to interpret directly (e.g. "salaries typically
+vary by about $8,000 from the average").
+
+**`PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY salary)`** — this is the
+unusual one. Break it into two pieces:
+- `PERCENTILE_CONT(0.5)` — "find the value at the 50th percentile" (0.5
+  = 50%). The 50th percentile is just another name for the **median**:
+  the value that splits the data exactly in half, half below, half
+  above.
+- `WITHIN GROUP (ORDER BY salary)` — this tells Postgres *which column,
+  sorted in which direction* to compute that percentile against. It
+  exists as a separate clause (instead of just writing
+  `PERCENTILE_CONT(0.5, salary)`) specifically because a percentile is
+  meaningless without sorting the data first — this syntax makes that
+  sorting step explicit and unmissable.
+
+**Why not just use `AVG(salary)` instead of the median?** Average gets
+pulled toward extreme outliers — one executive's very high salary drags
+the average up for everyone. Median doesn't move nearly as much, since
+it only cares about the middle position, not the actual size of extreme
+values — which is why "median household income" is the number you see
+quoted in real-world statistics, not the average.
+
+**The four `PERCENTILE_CONT` calls together** are computing a full
+spread of the salary distribution — 25th percentile, median (50th),
+75th, and 90th — the same idea as a box plot's five-number summary,
+letting you see the whole shape of the data, not just its center.
+
+**Trace it against sample data** — say `employees.salary` sorted is
+`[45000, 52000, 58000, 61000, 67000, 72000, 95000]` (7 employees):
+
+| std_deviation | variance | median | p25 | p75 | p90 |
+|---|---|---|---|---|---|
+| ~15800 | ~2.5e8 | 61000 | 52000 | 72000 | ~88600 |
+
+The median (`61000`) is the exact middle value of the 7 sorted salaries
+— `PERCENTILE_CONT` interpolates between values when the requested
+percentile doesn't land exactly on one row (hence "CONT" for
+*continuous* — it's allowed to return a value that didn't literally
+appear in the data, unlike its sibling `PERCENTILE_DISC`, which is
+restricted to returning an actual existing row's value).
+
+**`MODE() WITHIN GROUP (ORDER BY department)`** — same `WITHIN GROUP`
+syntax, different question: "which single value appears most often?"
+(the statistical *mode*). If `Engineering` has more employees than any
+other department, `MODE()` returns `'Engineering'` — again, the
+`ORDER BY` inside `WITHIN GROUP` names which column this is computed
+over, not an actual sort applied to the final result.
+
 ---
 
 ## Advanced Aggregation Functions
