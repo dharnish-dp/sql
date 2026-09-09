@@ -64,7 +64,16 @@ SELECT
 FROM orders
 GROUP BY status
 ORDER BY order_count DESC;
+```
+Example output:
+| status | order_count |
+|---|---|
+| delivered | 5 |
+| pending | 3 |
+| cancelled | 1 |
+| shipped | 1 |
 
+```sql
 -- Count with condition using CASE
 SELECT
     COUNT(*)                                              AS total,
@@ -73,7 +82,13 @@ SELECT
     COUNT(CASE WHEN status = 'cancelled' THEN 1 END)     AS cancelled,
     COUNT(CASE WHEN total > 500          THEN 1 END)     AS large_orders
 FROM orders;
+```
+Example output:
+| total | delivered | pending | cancelled | large_orders |
+|---|---|---|---|---|
+| 10 | 5 | 3 | 1 | 4 |
 
+```sql
 -- Modern alternative: FILTER clause (PostgreSQL 9.4+)
 SELECT
     COUNT(*)                                   AS total,
@@ -82,6 +97,10 @@ SELECT
     COUNT(*) FILTER (WHERE total > 500)          AS large_orders
 FROM orders;
 ```
+Example output (same result as the CASE version above, cleaner syntax):
+| total | delivered | pending | large_orders |
+|---|---|---|---|
+| 10 | 5 | 3 | 4 |
 
 ---
 
@@ -89,7 +108,7 @@ FROM orders;
 
 ```sql
 -- Total revenue
-SELECT SUM(total) AS total_revenue FROM orders;
+SELECT SUM(total) AS total_revenue FROM orders;   -- 4529.87 (example)
 
 -- Total revenue by status
 SELECT
@@ -98,14 +117,29 @@ SELECT
 FROM orders
 GROUP BY status
 ORDER BY revenue DESC NULLS LAST;
+```
+Example output:
+| status | revenue |
+|---|---|
+| delivered | 2899.95 |
+| pending | 1120.50 |
+| shipped | 399.98 |
+| cancelled | 109.44 |
 
+```sql
 -- SUM with condition
 SELECT
     SUM(total)                            AS total_revenue,
     SUM(total) FILTER (WHERE status = 'delivered') AS delivered_revenue,
     SUM(total) FILTER (WHERE status = 'cancelled') AS cancelled_revenue
 FROM orders;
+```
+Example output:
+| total_revenue | delivered_revenue | cancelled_revenue |
+|---|---|---|
+| 4529.87 | 2899.95 | 109.44 |
 
+```sql
 -- Sum per customer
 SELECT
     customer_id,
@@ -114,7 +148,15 @@ SELECT
 FROM orders
 GROUP BY customer_id
 ORDER BY lifetime_value DESC;
+```
+Example output:
+| customer_id | order_count | lifetime_value |
+|---|---|---|
+| 1 | 3 | 1329.98 |
+| 4 | 2 | 899.50 |
+| 2 | 1 | 129.99 |
 
+```sql
 -- SUM of computed column
 SELECT
     product_id,
@@ -124,6 +166,12 @@ FROM order_items
 GROUP BY product_id
 ORDER BY total_revenue DESC;
 ```
+Example output:
+| product_id | total_revenue | total_units_sold |
+|---|---|---|
+| 3 | 1499.85 | 5 |
+| 1 | 899.94 | 3 |
+| 7 | 249.90 | 10 |
 
 ---
 
@@ -144,12 +192,26 @@ SELECT
 FROM products
 GROUP BY category
 ORDER BY avg_price DESC;
+```
+Example output:
+| category | product_count | avg_price | min_price | max_price |
+|---|---|---|---|---|
+| Electronics | 4 | 412.49 | 29.99 | 999.99 |
+| Furniture | 3 | 210.00 | 89.99 | 349.99 |
+| Books | 3 | 18.50 | 9.99 | 24.99 |
 
+```sql
 -- Weighted average
 SELECT
     SUM(unit_price * quantity) / SUM(quantity) AS weighted_avg_price
 FROM order_items;
+```
+Example output:
+| weighted_avg_price |
+|---|
+| 87.32 |
 
+```sql
 -- Average order value per customer
 SELECT
     customer_id,
@@ -162,6 +224,12 @@ GROUP BY customer_id
 HAVING COUNT(*) >= 1
 ORDER BY avg_order_value DESC;
 ```
+Example output:
+| customer_id | orders | avg_order_value | lifetime_value |
+|---|---|---|---|
+| 4 | 2 | 449.75 | 899.50 |
+| 1 | 3 | 443.33 | 1329.98 |
+| 2 | 1 | 129.99 | 129.99 |
 
 ---
 
@@ -170,8 +238,11 @@ ORDER BY avg_order_value DESC;
 ```sql
 -- Simplest uses
 SELECT MIN(price) AS cheapest, MAX(price) AS most_expensive FROM products;
+-- cheapest=9.99, most_expensive=999.99 (example)
 SELECT MIN(order_date) AS first_order, MAX(order_date) AS last_order FROM orders;
+-- first_order=2024-01-03, last_order=2024-03-28 (example)
 SELECT MIN(salary), MAX(salary) FROM employees;
+-- min=68000, max=120000 (example)
 
 -- Min/max per group
 SELECT
@@ -181,10 +252,23 @@ SELECT
     MAX(salary) - MIN(salary) AS salary_spread
 FROM employees
 GROUP BY department;
+```
+Example output:
+| department | min_salary | max_salary | salary_spread |
+|---|---|---|---|
+| Engineering | 88000 | 120000 | 32000 |
+| Sales | 68000 | 75000 | 7000 |
 
+```sql
 -- Min/max with text (alphabetical)
 SELECT MIN(name), MAX(name) FROM customers;
+```
+Example output:
+| min | max |
+|---|---|
+| Alice Johnson | Sarah Miller |
 
+```sql
 -- Min/max date per customer
 SELECT
     customer_id,
@@ -194,6 +278,11 @@ SELECT
 FROM orders
 GROUP BY customer_id;
 ```
+Example output:
+| customer_id | first_purchase | last_purchase | customer_lifespan_days |
+|---|---|---|---|
+| 1 | 2024-01-05 | 2024-03-12 | 67 |
+| 2 | 2024-02-18 | 2024-02-18 | 0 |
 
 ---
 
@@ -220,7 +309,15 @@ SELECT
 FROM customers
 GROUP BY country, city
 ORDER BY country, customer_count DESC;
+```
+Example output:
+| country | city | customer_count |
+|---|---|---|
+| UK | London | 2 |
+| US | New York | 2 |
+| US | Chicago | 1 |
 
+```sql
 -- Group by expression
 SELECT
     DATE_TRUNC('month', order_date) AS month,
@@ -229,9 +326,19 @@ SELECT
 FROM orders
 GROUP BY DATE_TRUNC('month', order_date)
 ORDER BY month;
+```
+Example output:
+| month | orders_count | monthly_revenue |
+|---|---|---|
+| 2024-01-01 | 4 | 1899.94 |
+| 2024-02-01 | 3 | 1129.98 |
+| 2024-03-01 | 3 | 1499.95 |
 
+```sql
 -- Group by column position (works but fragile)
 SELECT category, COUNT(*) FROM products GROUP BY 1;
+-- "1" means "group by the 1st column in SELECT" (category) — same result
+-- as GROUP BY category, but breaks silently if column order ever changes
 
 -- Group by alias — PostgreSQL DOES allow this
 SELECT
@@ -241,6 +348,12 @@ FROM orders
 GROUP BY month  -- PostgreSQL allows grouping by alias
 ORDER BY month;
 ```
+Example output (same shape as the expression version above, just referencing the alias instead of repeating the expression):
+| month | order_count |
+|---|---|
+| 2024-01-01 | 4 |
+| 2024-02-01 | 3 |
+| 2024-03-01 | 3 |
 
 ---
 
@@ -254,13 +367,27 @@ SELECT category, COUNT(*) AS product_count
 FROM products
 GROUP BY category
 HAVING COUNT(*) > 2;
+```
+Example output:
+| category | product_count |
+|---|---|
+| Electronics | 4 |
+| Books | 3 |
 
+```sql
 -- Only show customers with more than 1 order
 SELECT customer_id, COUNT(*) AS orders
 FROM orders
 GROUP BY customer_id
 HAVING COUNT(*) > 1;
+```
+Example output:
+| customer_id | orders |
+|---|---|
+| 1 | 3 |
+| 4 | 2 |
 
+```sql
 -- Combined: categories with avg price over $100
 SELECT
     category,
@@ -271,7 +398,13 @@ WHERE stock > 0              -- WHERE: filter individual products (before groupi
 GROUP BY category
 HAVING AVG(price) > 100      -- HAVING: filter groups (after grouping)
 ORDER BY avg_price DESC;
+```
+Example output:
+| category | products | avg_price |
+|---|---|---|
+| Electronics | 4 | 412.49 |
 
+```sql
 -- HAVING with FILTER
 SELECT
     customer_id,
@@ -280,7 +413,14 @@ SELECT
 FROM orders
 GROUP BY customer_id
 HAVING COUNT(*) FILTER (WHERE status = 'delivered') >= 1;
+```
+Example output:
+| customer_id | total_orders | delivered |
+|---|---|---|
+| 1 | 3 | 2 |
+| 4 | 2 | 1 |
 
+```sql
 -- WHERE vs HAVING — the key difference:
 -- WHERE runs BEFORE GROUP BY and cannot use aggregate results
 -- HAVING runs AFTER GROUP BY and CAN use aggregate results
@@ -298,10 +438,12 @@ SELECT category FROM products GROUP BY category HAVING AVG(price) > 100;
 
 ```sql
 -- Count distinct values
-SELECT COUNT(DISTINCT country) FROM customers;
+SELECT COUNT(DISTINCT country) FROM customers;   -- 2 (example: US, UK)
 
 -- Sum distinct values (less common but valid)
 SELECT SUM(DISTINCT salary) FROM employees;
+-- Adds each UNIQUE salary once — two employees earning the same 88000
+-- contribute 88000 to this sum only ONCE, not twice
 
 -- Count distinct items per order
 SELECT
@@ -312,6 +454,16 @@ SELECT
 FROM order_items
 GROUP BY order_id;
 ```
+Example output:
+| order_id | unique_products | total_line_items | total_units |
+|---|---|---|---|
+| 1 | 2 | 2 | 3 |
+| 2 | 3 | 3 | 7 |
+
+Notice `unique_products` and `total_line_items` can differ from
+`total_units` — line items count rows, `unique_products` counts distinct
+`product_id`s, `total_units` sums the `quantity` column. Three different
+questions, three different numbers, from the same rows.
 
 ---
 
@@ -332,7 +484,14 @@ SELECT
     STRING_AGG(name, ' | ' ORDER BY price DESC) AS products
 FROM products
 GROUP BY category;
+```
+Example output:
+| category | products |
+|---|---|
+| Electronics | Laptop \| Monitor \| Keyboard \| Mouse |
+| Books | SQL Guide \| Python Basics \| Clean Code |
 
+```sql
 -- Array aggregation
 SELECT
     category,
@@ -341,6 +500,16 @@ SELECT
 FROM products
 GROUP BY category;
 ```
+Example output (Postgres arrays print inside `{}`):
+| category | product_names | prices |
+|---|---|---|
+| Electronics | {Mouse,Keyboard,Monitor,Laptop} | {29.99,49.99,199.99,999.99} |
+| Books | {Clean Code,Python Basics,SQL Guide} | {9.99,19.99,24.99} |
+
+Unlike `STRING_AGG` (which flattens everything into one text value),
+`ARRAY_AGG` keeps each collected value as a separate element you can
+index into or unpack later (see [Lesson 16](16-postgresql-power-features.md)
+for working with arrays).
 
 ---
 
@@ -456,6 +625,20 @@ GROUP BY CUBE(country, city);
 -- For 2 dimensions, CUBE produces 2^2 = 4 grouping sets:
 -- (country, city), (country), (city), ()
 ```
+Example output — notice the extra rows compared to `ROLLUP` on the same
+columns: `CUBE` adds a **city-only** subtotal too (summed across every
+country), which `ROLLUP` never produces:
+| country | city | customers |
+|---|---|---|
+| US | New York | 2 |
+| US | Chicago | 1 |
+| US | NULL | 3 |
+| UK | London | 2 |
+| UK | NULL | 2 |
+| NULL | New York | 2 |
+| NULL | Chicago | 1 |
+| NULL | London | 2 |
+| NULL | NULL | 5 |
 
 ---
 
@@ -476,6 +659,23 @@ GROUP BY GROUPING SETS (
 
 -- Equivalent to ROLLUP(country, city) in this case
 ```
+Example output — same rows as the `ROLLUP(country, city)` example
+earlier, because this listed the exact same three grouping levels
+explicitly instead of letting `ROLLUP` generate them automatically:
+| country | city | customers |
+|---|---|---|
+| US | New York | 2 |
+| US | Chicago | 1 |
+| US | NULL | 3 |
+| UK | London | 2 |
+| UK | NULL | 2 |
+| NULL | NULL | 5 |
+
+**The one-line distinction from `ROLLUP`/`CUBE`:** `GROUPING SETS` gives
+you full control over *exactly* which combinations to include — useful
+when you want, say, `(country)` and `(city)` subtotals but explicitly
+*not* the full `(country, city)` breakdown, which neither `ROLLUP` nor
+`CUBE` alone can selectively skip.
 
 ---
 
@@ -496,6 +696,12 @@ WHERE status != 'cancelled'
 GROUP BY TO_CHAR(order_date, 'YYYY-MM')
 ORDER BY month;
 ```
+Example output:
+| month | order_count | unique_customers | revenue | avg_order_value | largest_order |
+|---|---|---|---|---|---|
+| 2024-01 | 4 | 3 | 1899.94 | 474.99 | 999.99 |
+| 2024-02 | 3 | 2 | 1129.98 | 376.66 | 899.99 |
+| 2024-03 | 2 | 2 | 1399.96 | 699.98 | 999.99 |
 
 ### Product Sales Summary
 
@@ -512,6 +718,13 @@ LEFT JOIN order_items oi ON oi.product_id = p.id
 GROUP BY p.id, p.name, p.category
 ORDER BY total_revenue DESC NULLS LAST;
 ```
+Example output — notice the `LEFT JOIN` (from [Lesson 06](06-joins-complete.md))
+keeps every product even if it's never been ordered:
+| name | category | orders_containing | total_units_sold | total_revenue | avg_selling_price |
+|---|---|---|---|---|---|
+| Laptop | Electronics | 3 | 3 | 2999.97 | 999.99 |
+| Monitor | Electronics | 2 | 4 | 799.96 | 199.99 |
+| Desk Lamp | Furniture | NULL | NULL | NULL | NULL |
 
 ### Department Salary Report
 
@@ -528,6 +741,11 @@ FROM employees
 GROUP BY department
 ORDER BY total_payroll DESC;
 ```
+Example output:
+| department | headcount | min_salary | max_salary | avg_salary | total_payroll | salary_range |
+|---|---|---|---|---|---|---|
+| Engineering | 4 | 88000 | 120000 | 98250 | 393000 | 32000 |
+| Sales | 2 | 68000 | 75000 | 71500 | 143000 | 7000 |
 
 ### Customer Segmentation
 
@@ -548,6 +766,12 @@ WHERE status != 'cancelled'
 GROUP BY customer_id
 ORDER BY lifetime_value DESC;
 ```
+Example output:
+| customer_id | total_orders | lifetime_value | avg_order_value | last_order_date | customer_tier |
+|---|---|---|---|---|---|
+| 1 | 3 | 1329.98 | 443.33 | 2024-03-12 | VIP |
+| 4 | 2 | 899.50 | 449.75 | 2024-02-20 | Regular |
+| 2 | 1 | 129.99 | 129.99 | 2024-02-18 | Occasional |
 
 ---
 

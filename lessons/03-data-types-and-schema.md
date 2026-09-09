@@ -483,6 +483,58 @@ which rarely matters for everyday use.
   you don't want deleting a catalog item to silently corrupt historical
   sales records.
 
+### A Table With TWO `CASCADE`s — Junction Tables
+
+`order_items` has two foreign keys with *different* behaviors (`CASCADE`
+vs `RESTRICT`). But some tables have two foreign keys that are **both**
+`CASCADE`, pointing to two *different* parent tables — this shows up on
+a **junction table**, the kind used to connect two things in a
+many-to-many relationship (more on this pattern in
+[Lesson 11](11-database-design-normalization.md)):
+
+```sql
+CREATE TABLE enrollments (
+    student_id INT REFERENCES students(id) ON DELETE CASCADE,
+    course_id  INT REFERENCES courses(id)  ON DELETE CASCADE,
+    enrolled_at TIMESTAMPTZ DEFAULT NOW(),
+    grade       CHAR(2),
+    PRIMARY KEY (student_id, course_id)
+);
+```
+
+`enrollments` connects `students` and `courses` — each row means "this
+student is enrolled in this course." **Each foreign key's `CASCADE`
+fires independently, based on its own parent:**
+
+- **Delete a student** → every `enrollments` row for that student
+  disappears automatically. An enrollment with no student left makes no
+  sense on its own.
+- **Delete a course** → every `enrollments` row for that course
+  disappears automatically. Same reasoning, from the other direction.
+
+**Trace it concretely.** Say `enrollments` currently holds:
+```
+student_id | course_id | grade
+1          | 101       | A
+1          | 102       | B
+2          | 101       | C
+```
+
+`DELETE FROM students WHERE id = 1;` removes only the rows where
+`student_id = 1` — `(1, 101, A)` and `(1, 102, B)` — leaving just
+`(2, 101, C)`, regardless of which courses were involved.
+
+`DELETE FROM courses WHERE id = 101;` instead removes only the rows
+where `course_id = 101` — `(1, 101, A)` and `(2, 101, C)` — leaving just
+`(1, 102, B)`, regardless of which students were involved.
+
+**The key idea:** because a junction table has one foreign key per side
+of the relationship, *either* parent disappearing is enough to delete
+the connecting row — the two `CASCADE`s aren't tied together, they each
+watch their own parent table independently. This is exactly the
+behavior you want: a student-course enrollment can never meaningfully
+outlive either the student or the course it connects.
+
 ---
 
 ## ALTER TABLE — Modifying Existing Tables

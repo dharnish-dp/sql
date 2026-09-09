@@ -64,16 +64,38 @@ WHERE price * 0.9 < 50;
 ```sql
 -- All columns (avoid in production: fragile if schema changes)
 SELECT * FROM customers;
+```
+Output (first 3 of 10 rows):
+| id | name | email | city | country |
+|---|---|---|---|---|
+| 1 | Alice Johnson | alice@example.com | New York | US |
+| 2 | Bob Smith | bob@example.com | London | UK |
+| 3 | Carol White | carol@example.com | Toronto | CA |
 
+```sql
 -- Specific columns
 SELECT name, email FROM customers;
+```
+Output (first 3 rows) — same rows, only the two chosen columns:
+| name | email |
+|---|---|
+| Alice Johnson | alice@example.com |
+| Bob Smith | bob@example.com |
+| Carol White | carol@example.com |
 
+```sql
 -- With table prefix (good habit when joining multiple tables)
 SELECT customers.name, customers.email FROM customers;
 
 -- Column alias with AS
 SELECT name AS customer_name, email AS contact_email FROM customers;
+```
+Output — identical data, only the column headers change:
+| customer_name | contact_email |
+|---|---|
+| Alice Johnson | alice@example.com |
 
+```sql
 -- AS is optional (but explicit is better)
 SELECT name customer_name FROM customers;
 
@@ -85,7 +107,14 @@ SELECT
     price * 0.9           AS discounted_price,
     price - (price * 0.1) AS also_discounted   -- same result
 FROM products;
+```
+Output (first 2 of 10 rows):
+| name | price | price_with_tax | discounted_price | also_discounted |
+|---|---|---|---|---|
+| Laptop Pro 15 | 1299.99 | 1429.989 | 1169.991 | 1169.991 |
+| Wireless Mouse | 29.99 | 32.989 | 26.991 | 26.991 |
 
+```sql
 -- String concatenation with ||
 SELECT name || ' (' || category || ')' AS product_label FROM products;
 
@@ -99,6 +128,12 @@ SELECT
     NOW()   AS queried_at
 FROM products;
 ```
+Output (first 2 rows) — `currency` and `queried_at` are the same literal
+value repeated on every row, not looked up from any table:
+| name | price | currency | queried_at |
+|---|---|---|---|
+| Laptop Pro 15 | 1299.99 | USD | 2026-09-08 10:15:00 |
+| Wireless Mouse | 29.99 | USD | 2026-09-08 10:15:00 |
 
 ---
 
@@ -125,20 +160,49 @@ WHERE uses boolean conditions. Only rows where the condition is TRUE are returne
 ```sql
 -- Equality
 SELECT * FROM customers WHERE country = 'US';
+```
+Output (using the sample data — Alice, David, Frank, Jack are all `US`):
+| id | name | email | city | country |
+|---|---|---|---|---|
+| 1 | Alice Johnson | alice@example.com | New York | US |
+| 4 | David Brown | david@example.com | New York | US |
+| 6 | Frank Lee | frank@example.com | San Francisco | US |
+| 10 | Jack Davis | jack@example.com | Chicago | US |
 
+```sql
 -- Inequality
 SELECT * FROM customers WHERE country != 'US';
 SELECT * FROM customers WHERE country <> 'US';  -- same, older syntax
 
 -- Comparison operators
 SELECT * FROM products WHERE price > 100;
+```
+Output (`price > 100`, from the products sample data):
+| name | category | price | stock |
+|---|---|---|---|
+| Laptop Pro 15 | Electronics | 1299.99 | 50 |
+| Mechanical Keyboard | Electronics | 129.99 | 75 |
+| Monitor 27" | Electronics | 399.99 | 30 |
+| Standing Desk | Furniture | 599.99 | 20 |
+| Ergonomic Chair | Furniture | 449.99 | 25 |
+
+```sql
 SELECT * FROM products WHERE price >= 100;
 SELECT * FROM products WHERE price < 50;
 SELECT * FROM products WHERE price <= 50;
 
 -- Combining conditions with AND
 SELECT * FROM products WHERE price > 50 AND price < 500;
+```
+Output — both conditions must hold, so this excludes anything ≤ $50 or ≥ $500:
+| name | category | price |
+|---|---|---|
+| USB-C Hub | Electronics | 49.99 |
+| Mechanical Keyboard | Electronics | 129.99 |
+| Monitor 27" | Electronics | 399.99 |
+| Ergonomic Chair | Furniture | 449.99 |
 
+```sql
 -- Combining with OR
 SELECT * FROM products WHERE category = 'Electronics' OR category = 'Furniture';
 
@@ -149,7 +213,19 @@ SELECT * FROM products WHERE NOT category = 'Stationery';
 SELECT * FROM products
 WHERE (category = 'Electronics' OR category = 'Furniture')
   AND price > 100;
+```
+Output — must be Electronics OR Furniture, AND over $100 (Notebook and
+Pen Set are excluded even though cheap Electronics/Furniture items exist,
+because they fail the price condition):
+| name | category | price |
+|---|---|---|
+| Laptop Pro 15 | Electronics | 1299.99 |
+| Mechanical Keyboard | Electronics | 129.99 |
+| Monitor 27" | Electronics | 399.99 |
+| Standing Desk | Furniture | 599.99 |
+| Ergonomic Chair | Furniture | 449.99 |
 
+```sql
 -- Without parentheses, AND binds tighter than OR:
 -- category = 'Electronics' OR (category = 'Furniture' AND price > 100)
 -- That's different! Always use parens.
@@ -179,16 +255,42 @@ returns NULL (falsy), never TRUE. Use `IS NULL` and `IS NOT NULL`.
 -- Ascending (default — smallest to largest, A to Z)
 SELECT * FROM products ORDER BY price;
 SELECT * FROM products ORDER BY price ASC;   -- same
+```
+Output (first 3 of 10 rows — cheapest first):
+| name | price |
+|---|---|
+| Notebook (paper) | 4.99 |
+| Pen Set | 9.99 |
+| Wireless Mouse | 29.99 |
 
+```sql
 -- Descending (largest to smallest, Z to A)
 SELECT * FROM products ORDER BY price DESC;
+```
+Output (first 3 rows — most expensive first, exact reverse of above):
+| name | price |
+|---|---|
+| Laptop Pro 15 | 1299.99 |
+| Standing Desk | 599.99 |
+| Ergonomic Chair | 449.99 |
 
+```sql
 -- Sort by multiple columns
 -- Primary sort: category ASC, then within each category sort by price DESC
 SELECT name, category, price
 FROM products
 ORDER BY category ASC, price DESC;
+```
+Output (first 4 rows) — categories alphabetically (Electronics first),
+and *within* Electronics, most expensive first:
+| name | category | price |
+|---|---|---|
+| Laptop Pro 15 | Electronics | 1299.99 |
+| Monitor 27" | Electronics | 399.99 |
+| Mechanical Keyboard | Electronics | 129.99 |
+| USB-C Hub | Electronics | 49.99 |
 
+```sql
 -- Sort by column alias
 SELECT name, price * 0.9 AS discounted
 FROM products
@@ -201,6 +303,15 @@ SELECT name, category, price FROM products ORDER BY 3 DESC;  -- 3 = price
 -- Override with NULLS FIRST / NULLS LAST
 SELECT name, manager_id FROM employees ORDER BY manager_id ASC NULLS LAST;
 ```
+Output (first 4 of 10 rows) — the three employees with `manager_id IS NULL`
+(top-level managers) are pushed to the bottom instead of the top, because
+of `NULLS LAST`:
+| name | manager_id |
+|---|---|
+| John Smith | 1 |
+| Jane Doe | 1 |
+| Nina Patel | 1 |
+| Lisa Chen | 4 |
 
 ---
 
@@ -209,10 +320,30 @@ SELECT name, manager_id FROM employees ORDER BY manager_id ASC NULLS LAST;
 ```sql
 -- Return only 5 rows
 SELECT * FROM products ORDER BY price DESC LIMIT 5;
+```
+Output — the 5 most expensive products, full stop:
+| name | price |
+|---|---|
+| Laptop Pro 15 | 1299.99 |
+| Standing Desk | 599.99 |
+| Ergonomic Chair | 449.99 |
+| Monitor 27" | 399.99 |
+| Mechanical Keyboard | 129.99 |
 
+```sql
 -- Skip first 5, return next 5 (page 2 of 5-per-page)
 SELECT * FROM products ORDER BY price DESC LIMIT 5 OFFSET 5;
+```
+Output — the *next* 5 products after skipping the 5 above (page 2):
+| name | price |
+|---|---|
+| USB-C Hub | 49.99 |
+| Desk Lamp | 39.99 |
+| Wireless Mouse | 29.99 |
+| Pen Set | 9.99 |
+| Notebook (paper) | 4.99 |
 
+```sql
 -- Page 3
 SELECT * FROM products ORDER BY price DESC LIMIT 5 OFFSET 10;
 
@@ -233,16 +364,43 @@ or gaps.
 ```sql
 -- All countries customers are from (unique values)
 SELECT DISTINCT country FROM customers ORDER BY country;
+```
+Output — 10 customer rows collapse down to just the distinct countries:
+| country |
+|---|
+| CA |
+| ES |
+| KR |
+| UK |
+| US |
 
+```sql
 -- All unique categories
 SELECT DISTINCT category FROM products;
 
 -- DISTINCT on multiple columns — unique combinations
 SELECT DISTINCT country, city FROM customers ORDER BY country, city;
+```
+Output — unique *combinations*, not unique per column (both Toronto rows
+are Canadian, so they collapse to one; but UK has two distinct cities):
+| country | city |
+|---|---|
+| CA | Toronto |
+| ES | Madrid |
+| KR | Seoul |
+| UK | London |
+| US | Chicago |
+| US | New York |
+| US | San Francisco |
 
+```sql
 -- DISTINCT with COUNT — how many unique countries?
 SELECT COUNT(DISTINCT country) AS unique_countries FROM customers;
 ```
+Output:
+| unique_countries |
+|---|
+| 5 |
 
 ---
 
@@ -252,17 +410,38 @@ SELECT COUNT(DISTINCT country) AS unique_countries FROM customers;
 -- Case-insensitive comparison using LOWER() or ILIKE
 SELECT * FROM customers WHERE LOWER(name) = 'alice johnson';
 SELECT * FROM customers WHERE name ILIKE 'alice johnson';  -- PostgreSQL-specific
+```
+Output — both match regardless of how the stored name is capitalized:
+| name | email |
+|---|---|
+| Alice Johnson | alice@example.com |
 
+```sql
 -- String length
 SELECT name, LENGTH(name) AS name_length FROM customers ORDER BY name_length DESC;
+```
+Output (first 3 of 10 rows, longest name first):
+| name | name_length |
+|---|---|
+| Eva Martinez | 12 |
+| Alice Johnson | 13 |
+| Henry Wilson | 12 |
 
+```sql
 -- Substring
 SELECT SUBSTRING(email, 1, 5) AS email_start FROM customers;
 -- Or: SUBSTR(email, 1, 5)
 
 -- Left and right
 SELECT LEFT(email, 5), RIGHT(email, 4) FROM customers;
+```
+Output (first 2 rows) — first 5 / last 4 characters of the email string:
+| left | right |
+|---|---|
+| alice | .com |
+| bob@e | .com |
 
+```sql
 -- Trim whitespace
 SELECT TRIM('  hello world  ');       -- 'hello world'
 SELECT LTRIM('  hello world  ');      -- 'hello world  '
@@ -270,10 +449,24 @@ SELECT RTRIM('  hello world  ');      -- '  hello world'
 
 -- Upper and lower
 SELECT UPPER(name), LOWER(email) FROM customers;
+```
+Output (first 2 rows):
+| upper | lower |
+|---|---|
+| ALICE JOHNSON | alice@example.com |
+| BOB SMITH | bob@example.com |
 
+```sql
 -- Replace
 SELECT REPLACE(email, '@example.com', '@newdomain.com') FROM customers;
+```
+Output (first 2 rows):
+| replace |
+|---|
+| alice@newdomain.com |
+| bob@newdomain.com |
 
+```sql
 -- Concatenation
 SELECT first_name || ' ' || last_name AS full_name FROM some_table;
 -- Or using CONCAT function
@@ -282,6 +475,11 @@ SELECT CONCAT(name, ' from ', city) AS description FROM customers;
 SELECT CONCAT_WS(', ', name, city, country) AS address FROM customers;
 -- CONCAT_WS: concatenate with separator, skips NULLs
 ```
+Output of the `CONCAT_WS` line (first 2 rows):
+| address |
+|---|
+| Alice Johnson, New York, US |
+| Bob Smith, London, UK |
 
 ---
 
@@ -300,7 +498,14 @@ SELECT
     SQRT(price)         AS sqrt_price,
     price % 10          AS remainder
 FROM products;
+```
+Output for one row (`price = 29.99`, Wireless Mouse) — each column is an
+independent transformation of the same starting value:
+| price | with_sales_tax | rounded | floor_price | ceil_price | absolute | squared | sqrt_price | remainder |
+|---|---|---|---|---|---|---|---|---|
+| 29.99 | 32.3892 | 32.39 | 29 | 30 | 29.99 | 899.4001 | 5.4763... | 9.99 |
 
+```sql
 -- Integer division
 SELECT 10 / 3;       -- Result: 3 (integer division, not 3.333)
 SELECT 10.0 / 3;     -- Result: 3.333... (float division)
@@ -335,7 +540,13 @@ SELECT
     EXTRACT(DOW   FROM order_date) AS day_of_week,  -- 0=Sunday, 6=Saturday
     EXTRACT(QUARTER FROM order_date) AS quarter
 FROM orders;
+```
+Output for order id=1 (`order_date = 2024-01-05`, a Friday):
+| order_date | year | month | day | day_of_week | quarter |
+|---|---|---|---|---|---|
+| 2024-01-05 | 2024 | 1 | 5 | 5 | 1 |
 
+```sql
 -- Date arithmetic
 SELECT
     order_date,
@@ -344,14 +555,27 @@ SELECT
     NOW() - order_date      AS age,           -- interval type
     NOW()::date - order_date AS days_since    -- integer
 FROM orders;
+```
+Output for order id=1, run "today" (2026-09-09):
+| order_date | plus_30_days | minus_7_days | age | days_since |
+|---|---|---|---|---|
+| 2024-01-05 | 2024-02-04 | 2023-12-29 | 979 days | 979 |
 
+```sql
 -- Date truncation
 SELECT
     DATE_TRUNC('month', order_date)  AS month_start,
     DATE_TRUNC('year',  order_date)  AS year_start,
     DATE_TRUNC('week',  order_date)  AS week_start
 FROM orders;
+```
+Output for order id=1 (`2024-01-05`) — each rounds *down* to the start
+of its respective period:
+| month_start | year_start | week_start |
+|---|---|---|
+| 2024-01-01 | 2024-01-01 | 2024-01-01 |
 
+```sql
 -- Format dates as strings
 SELECT TO_CHAR(order_date, 'Month DD, YYYY') FROM orders;
 -- Output: "January  05, 2024"
@@ -397,6 +621,14 @@ FROM products
 WHERE price < 100
 ORDER BY price ASC;
 ```
+Output:
+| name | category | price |
+|---|---|---|
+| Notebook (paper) | Stationery | 4.99 |
+| Pen Set | Stationery | 9.99 |
+| Wireless Mouse | Electronics | 29.99 |
+| Desk Lamp | Furniture | 39.99 |
+| USB-C Hub | Electronics | 49.99 |
 
 **Example 2 — Top 3 most expensive products:**
 ```sql
@@ -405,6 +637,12 @@ FROM products
 ORDER BY price DESC
 LIMIT 3;
 ```
+Output:
+| name | price |
+|---|---|
+| Laptop Pro 15 | 1299.99 |
+| Standing Desk | 599.99 |
+| Ergonomic Chair | 449.99 |
 
 **Example 3 — US customers from New York, with computed field:**
 ```sql
@@ -418,6 +656,11 @@ WHERE country = 'US'
   AND city = 'New York'
 ORDER BY name;
 ```
+Output — two customers match both `country = 'US'` and `city = 'New York'`:
+| name | email | city | member_info |
+|---|---|---|---|
+| Alice Johnson | alice@example.com | New York | Member since: 2024 |
+| David Brown | david@example.com | New York | Member since: 2024 |
 
 **Example 4 — Orders from January 2024:**
 ```sql
@@ -427,6 +670,13 @@ WHERE order_date >= '2024-01-01'
   AND order_date < '2024-02-01'
 ORDER BY order_date;
 ```
+Output — 4 of the 10 sample orders fall inside January:
+| id | customer_id | order_date | total |
+|---|---|---|---|
+| 1 | 1 | 2024-01-05 | 1329.98 |
+| 3 | 2 | 2024-01-10 | 129.99 |
+| 7 | 6 | 2024-01-15 | 399.99 |
+| 10 | 9 | 2024-01-22 | 59.98 |
 
 **Example 5 — Delivered or shipped orders, total > 100:**
 ```sql
@@ -436,6 +686,15 @@ WHERE (status = 'delivered' OR status = 'shipped')
   AND total > 100
 ORDER BY total DESC;
 ```
+Output — `cancelled`/`pending` orders are excluded regardless of total,
+and delivered/shipped orders ≤ $100 are excluded too:
+| id | customer_id | status | total |
+|---|---|---|---|
+| 1 | 1 | delivered | 1329.98 |
+| 8 | 7 | delivered | 1299.99 |
+| 4 | 3 | shipped | 449.99 |
+| 9 | 8 | shipped | 179.98 |
+| 3 | 2 | delivered | 129.99 |
 
 **Example 6 — Products with price between 30 and 150, showing tax:**
 ```sql
@@ -450,6 +709,13 @@ FROM products
 WHERE price BETWEEN 30 AND 150   -- inclusive on both ends
 ORDER BY inventory_value DESC;
 ```
+Output — only 3 products fall in the $30–$150 range; sorted by total
+inventory value (`price × stock`), not price itself:
+| name | price | tax | total_with_tax | stock | inventory_value |
+|---|---|---|---|---|---|
+| Mechanical Keyboard | 129.99 | 10.40 | 140.39 | 75 | 9749.25 |
+| USB-C Hub | 49.99 | 4.00 | 53.99 | 150 | 7498.50 |
+| Desk Lamp | 39.99 | 3.20 | 43.19 | 100 | 3999.00 |
 
 **Example 7 — Employees hired in 2021 or later:**
 ```sql
@@ -463,6 +729,13 @@ FROM employees
 WHERE hire_date >= '2021-01-01'
 ORDER BY hire_date;
 ```
+Output — only 3 of the 10 employees were hired in 2021 or later
+(`days_employed` shown here as run "today"; it grows every day you run this):
+| name | department | salary | hire_date | days_employed |
+|---|---|---|---|---|
+| Lisa Chen | Sales | 68000 | 2021-02-28 | ~2020 |
+| Nina Patel | Engineering | 88000 | 2021-09-01 | ~1835 |
+| Chris Park | HR | 60000 | 2022-01-05 | ~1708 |
 
 **Example 8 — Employees without a manager (top-level):**
 ```sql
@@ -471,6 +744,13 @@ FROM employees
 WHERE manager_id IS NULL
 ORDER BY salary DESC;
 ```
+Output — the 3 employees with no manager (the top of each department's
+hierarchy), highest salary first:
+| name | department | salary |
+|---|---|---|
+| Sarah Connor | Engineering | 120000 |
+| Mike Johnson | Sales | 75000 |
+| Anna White | HR | 65000 |
 
 ---
 

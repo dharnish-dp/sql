@@ -136,3 +136,8 @@ when you're done testing.
 3. Never use `trust` auth on any rule beyond `127.0.0.1`/`::1` — always require a real password on network rules
 4. Scope LAN rules to a specific app role and database, not your superuser role
 5. LAN access is a testing convenience, not how real applications get deployed — production uses managed hosting with SSL and narrow IP allowlists
+
+---
+
+## Next Lesson
+[Lesson 20 — Standard SQL vs PostgreSQL-Specific Features](20-standard-sql-vs-postgresql.md)

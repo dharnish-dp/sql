@@ -42,6 +42,16 @@ SELECT * FROM orders WHERE order_date > '2024-02-01';
 SELECT * FROM orders WHERE order_date = CURRENT_DATE;
 ```
 
+**Output** for `SELECT * FROM products WHERE price > 100;`:
+
+| id | name       | category    | price  | stock |
+|----|------------|-------------|--------|-------|
+| 2  | Laptop     | Electronics | 999.99 | 15    |
+| 5  | Desk Chair | Furniture   | 149.99 | 8     |
+
+Only rows where `price` is strictly greater than 100 survive — a
+product at exactly `100.00` would NOT appear here (use `>=` for that).
+
 ---
 
 ## BETWEEN — Inclusive Range
@@ -69,6 +79,16 @@ WHERE order_date >= '2024-01-01'
   AND order_date <  '2024-02-01';   -- exclusive upper bound
 ```
 
+**Output** for `SELECT * FROM products WHERE price BETWEEN 50 AND 200;`:
+
+| id | name       | category    | price  |
+|----|------------|-------------|--------|
+| 3  | Headphones | Electronics | 79.99  |
+| 5  | Desk Chair | Furniture   | 149.99 |
+
+Both `50` and `200` themselves would be included if a row matched
+exactly — that's what "inclusive on both ends" means in practice.
+
 ---
 
 ## IN — Match Against a List
@@ -86,6 +106,19 @@ SELECT * FROM customers WHERE country NOT IN ('US', 'UK', 'CA');
 
 -- IN with numbers
 SELECT * FROM orders WHERE customer_id IN (1, 3, 5, 7, 9);
+```
+
+**Output** for `SELECT * FROM customers WHERE country IN ('US', 'UK', 'CA');`:
+
+| id | name  | country |
+|----|-------|---------|
+| 1  | Alice | US      |
+| 2  | Bob   | UK      |
+| 4  | Dan   | CA      |
+
+Carol (country = `'FR'`) is excluded — her country isn't in the list.
+
+```sql
 
 -- IN with subquery (covered deeply in Lesson 07)
 SELECT * FROM customers
@@ -98,6 +131,18 @@ SELECT * FROM employees WHERE id NOT IN (1, 2, NULL);
 
 -- Safe pattern: use NOT EXISTS instead (Lesson 07)
 ```
+
+**Output** for `SELECT * FROM employees WHERE id NOT IN (1, 2, NULL);`:
+
+| id | name |
+|----|------|
+| *(no rows returned)* | |
+
+Even though employees with `id = 3, 4, 5...` clearly aren't `1` or `2`,
+**zero rows come back** — the `NULL` in the list poisons the entire
+comparison, because SQL can't prove any row is definitely NOT equal to
+an unknown value. This is exactly the gotcha the comment above warns
+about.
 
 ---
 
@@ -119,6 +164,20 @@ SELECT * FROM customers WHERE name LIKE '%lee%';  -- case-sensitive
 
 -- ILIKE — case-insensitive (PostgreSQL extension)
 SELECT * FROM customers WHERE name ILIKE '%alice%';  -- finds 'Alice', 'ALICE', etc.
+```
+
+**Output** for `SELECT * FROM customers WHERE name LIKE 'A%';`:
+
+| id | name  |
+|----|-------|
+| 1  | Alice |
+| 6  | Adam  |
+
+`LIKE 'A%'` matches names starting with a capital `A` exactly — a name
+like `'alice'` (lowercase) would NOT match, because `LIKE` is
+case-sensitive. `ILIKE 'a%'` would match both.
+
+```sql
 
 -- Exactly 5 characters
 SELECT * FROM products WHERE name LIKE '_____';  -- 5 underscores
@@ -168,6 +227,19 @@ SELECT * FROM products WHERE description IS NULL;     -- no description
 -- Find rows where a column HAS a value
 SELECT * FROM employees WHERE manager_id IS NOT NULL;
 SELECT * FROM customers WHERE phone IS NOT NULL;
+```
+
+**Output** for `SELECT * FROM employees WHERE manager_id IS NULL;`:
+
+| id | name  | department | manager_id |
+|----|-------|------------|------------|
+| 1  | Grace | Executive  | NULL       |
+
+Only the top of the org chart has no manager — this is the same
+`manager_id IS NULL` pattern used as the base case of the recursive CTE
+in [Lesson 07](07-subqueries-and-ctes.md).
+
+```sql
 
 -- Combine with other conditions
 SELECT * FROM employees
@@ -182,6 +254,20 @@ SELECT * FROM orders WHERE status IS DISTINCT FROM 'cancelled';
 SELECT * FROM orders WHERE status IS NOT DISTINCT FROM NULL;
 -- Returns rows where status IS NULL
 ```
+
+**Output** for `SELECT * FROM orders WHERE status IS DISTINCT FROM 'cancelled';`:
+
+| id | status    | total  |
+|----|-----------|--------|
+| 1  | delivered | 999.99 |
+| 3  | NULL      | 129.99 |
+| 4  | pending   | 299.99 |
+
+Notice the `NULL` status row is **included** here — that's the whole
+point of `IS DISTINCT FROM`. Compare with plain `status != 'cancelled'`:
+that version would silently drop the `NULL` row too, since `NULL != anything`
+evaluates to `NULL` (neither true nor false), and `WHERE` only keeps
+rows where the condition is exactly `TRUE`.
 
 ---
 
@@ -202,6 +288,24 @@ WHERE country = 'US' AND category = 'Electronics' OR price < 30;
 SELECT * FROM products
 WHERE country = 'US'
   AND (category = 'Electronics' OR price < 30);
+```
+
+**Why the first query is a bug, shown concretely.** Say `products` has
+a $20 item with `country = 'FR'` (not US) and `category = 'Furniture'`.
+Because `AND` binds tighter than `OR`, the unparenthesized version reads
+as `(country='US' AND category='Electronics') OR price < 30` — so this
+French $20 furniture item **still matches**, purely from the `price < 30`
+branch, regardless of country:
+
+| id | name        | country | category  | price |
+|----|-------------|---------|-----------|-------|
+| 9  | Cheap Vase  | FR      | Furniture | 20.00 |
+
+That's almost certainly not what "US electronics OR cheap items" was
+meant to express. The parenthesized version correctly excludes this row,
+since it requires `country = 'US'` no matter which OR-branch fires.
+
+```sql
 
 -- Complex conditions
 SELECT * FROM employees
@@ -238,6 +342,17 @@ SELECT
 FROM orders;
 ```
 
+**Output:**
+
+| name  | status    | status_description       |
+|-------|-----------|---------------------------|
+| Alice | delivered | Completed                 |
+| Bob   | pending   | Waiting for processing    |
+| Carol | shipped   | On the way                |
+
+Each row's `status` picks exactly one `WHEN` branch — `CASE` here just
+translates a raw status code into a human-readable label per row.
+
 ### Searched CASE (general conditions)
 
 ```sql
@@ -253,6 +368,18 @@ SELECT
     END AS price_tier
 FROM products
 ORDER BY price;
+```
+
+**Output:**
+
+| name       | price  | price_tier |
+|------------|--------|------------|
+| Notebook   | 4.99   | Budget     |
+| Headphones | 79.99  | Mid-range  |
+| Desk Chair | 149.99 | Premium    |
+| Laptop     | 999.99 | Luxury     |
+
+```sql
 
 -- Compute a discount based on status and quantity
 SELECT
@@ -273,7 +400,23 @@ WHERE CASE department
           WHEN 'Sales'       THEN salary > 65000
           ELSE                    salary > 50000
       END;
+```
 
+**Output** (assuming Alice is Engineering/95000, Bob is Sales/70000, Carol is Marketing/55000):
+
+| name  | department | salary |
+|-------|------------|--------|
+| Alice | Engineering| 95000  |
+| Bob   | Sales      | 70000  |
+| Carol | Marketing  | 55000  |
+
+Each row runs its **own** threshold depending on its department: Alice's
+95000 clears Engineering's 90000 bar, Bob's 70000 clears Sales' 65000
+bar, Carol's 55000 clears the `ELSE` (default) 50000 bar. A Marketing
+employee earning 48000 would be filtered OUT — it fails the `ELSE`
+branch's `salary > 50000` check.
+
+```sql
 -- CASE in ORDER BY
 SELECT name, salary FROM employees
 ORDER BY
@@ -308,6 +451,19 @@ WHERE EXISTS (
 );
 -- EXISTS returns TRUE if the subquery returns any row at all
 -- The SELECT 1 is a convention — the actual value doesn't matter
+```
+
+**Output** (assuming Carol has never placed an order):
+
+| name  | email             |
+|-------|-------------------|
+| Alice | alice@example.com|
+| Bob   | bob@example.com  |
+
+Carol is excluded — the inner subquery finds zero matching `orders` rows
+for her, so `EXISTS (...)` evaluates to `FALSE` for her row.
+
+```sql
 
 -- Find customers who have NOT placed any order
 SELECT c.name, c.email
@@ -333,6 +489,22 @@ WHERE NOT EXISTS (
 SELECT * FROM products
 WHERE price > ANY (SELECT total FROM orders WHERE status = 'pending');
 -- Products more expensive than the cheapest pending order
+```
+
+**Output** (assuming pending order totals are `50.00` and `299.99` — so
+the cheapest is `50.00`):
+
+| id | name       | price  |
+|----|------------|--------|
+| 2  | Laptop     | 999.99 |
+| 3  | Headphones | 79.99  |
+| 5  | Desk Chair | 149.99 |
+
+Every product priced above `50.00` (the smallest value in the pending
+orders subquery) qualifies for `> ANY` — it only needs to beat **one**
+value in the set, not all of them.
+
+```sql
 
 -- ALL: true only if condition holds for ALL values
 SELECT * FROM products
@@ -355,6 +527,24 @@ SELECT price * 1.08 AS total_price FROM products WHERE total_price > 50;
 
 -- CORRECT — repeat the expression:
 SELECT price * 1.08 AS total_price FROM products WHERE price * 1.08 > 50;
+```
+
+**The WRONG version fails with:**
+```
+ERROR:  column "total_price" does not exist
+```
+**The CORRECT version's output** (for a $79.99 product):
+
+| total_price |
+|--------------|
+| 86.39        |
+
+Since `WHERE` runs before `SELECT` computes any aliases (see the
+execution order in [Lesson 05](05-aggregations.md)), `total_price`
+simply doesn't exist yet at the point `WHERE` is evaluated — the alias
+is only created afterward, in the `SELECT` step.
+
+```sql
 
 -- Or use a subquery / CTE:
 SELECT * FROM (
@@ -448,6 +638,18 @@ WHERE department IN ('Engineering', 'Sales')
   AND manager_id IS NOT NULL
 ORDER BY department, salary DESC;
 ```
+
+**Output** (sample rows matching all four conditions):
+
+| name  | department  | salary | hire_date  | seniority |
+|-------|-------------|--------|------------|-----------|
+| Alice | Engineering | 95000  | 2019-03-15 | Senior    |
+| Dan   | Engineering | 82000  | 2020-07-01 | Mid-level |
+| Bob   | Sales       | 70000  | 2021-02-10 | Junior    |
+
+Every row satisfies all four `WHERE` conditions at once (department,
+hire date, salary range, and having a manager) — then `CASE` labels
+each surviving row's seniority based purely on its own salary.
 
 **Example 2 — Product availability with stock category:**
 ```sql
