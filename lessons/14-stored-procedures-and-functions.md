@@ -578,6 +578,57 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM customers WHERE id = p_customer_id) THEN
         RAISE EXCEPTION 'Customer % does not exist', p_customer_id;
     END IF;
+```
+
+**Why you need this:** you already know from [Lesson 10](10-transactions-and-acid.md)
+that an error inside a transaction aborts it and requires `ROLLBACK`.
+`RAISE EXCEPTION` is *how a function deliberately triggers that same
+failure on purpose* — when your own logic decides something is wrong
+(a customer that doesn't exist), rather than waiting for Postgres to
+hit a real constraint violation.
+
+**What actually happens, step by step, when this line runs:**
+
+1. **Execution of the function stops immediately, right at this line.**
+   Nothing after it runs — not the `INSERT INTO orders` below, not the
+   product loop, nothing — for this call, ever.
+2. **The error propagates up to whoever called the function** — exactly
+   like any other Postgres error (a constraint violation, a type
+   mismatch).
+3. **If this function was called inside a transaction, the whole
+   transaction enters the same "aborted" state** from [Lesson 10](10-transactions-and-acid.md)
+   — every subsequent command is rejected until `ROLLBACK` runs
+   explicitly. `RAISE EXCEPTION` doesn't quietly clean up after itself
+   any more than a real constraint error would.
+
+**Concrete trace:**
+```sql
+BEGIN;
+
+SELECT place_order(999, ARRAY[5], ARRAY[2]);   -- customer_id=999 doesn't exist
+-- ERROR:  Customer 999 does not exist
+
+SELECT * FROM orders;             -- try anything else
+-- ERROR: current transaction is aborted, commands ignored until end of transaction block
+
+ROLLBACK;   -- required to actually recover
+```
+
+Nothing this function did *before* reaching the `RAISE EXCEPTION` line
+survives either — if the `INSERT INTO orders` below had already run
+before this check (it hasn't here, since the check comes first), that
+insert would be undone too, because the whole transaction rolls back
+together, not just this one function call.
+
+**The one way to NOT let it kill the whole transaction:** wrap the call
+in an `EXCEPTION WHEN` block (covered later in this lesson) — a
+try/catch-style construct. Without one, `RAISE EXCEPTION` always
+propagates all the way up and aborts the transaction; that's the
+default, and the reason it's a distinct tool from `RAISE NOTICE`/
+`RAISE WARNING`, which just print a message and let execution continue
+normally.
+
+```sql
 
     -- Create the order
     INSERT INTO orders (customer_id, status, total)

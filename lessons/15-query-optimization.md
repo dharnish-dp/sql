@@ -48,6 +48,56 @@ extension that automatically tracks *every* query Postgres runs, along
 with how often and how long each one takes — turning "which query is
 the problem?" from a guess into a ranked list.
 
+#### Enabling It — Why `CREATE EXTENSION` Alone Isn't Enough
+
+Unlike most extensions, `pg_stat_statements` needs to hook into query
+execution itself, tracking every query across **every session**, in
+shared memory, from the moment Postgres starts — that kind of always-on
+tracking can only be wired in at startup, not switched on mid-session.
+`CREATE EXTENSION` alone will succeed, but querying the view afterward
+fails with:
+```
+ERROR:  pg_stat_statements must be loaded via shared_preload_libraries
+```
+
+**Fix, step by step:**
+
+1. **Find the config file Postgres is actually using** — don't assume;
+   confirm it:
+   ```sql
+   SHOW config_file;
+   ```
+   This returns the real path, e.g.
+   `/opt/homebrew/var/postgresql@16/postgresql.conf`. Edit *that exact
+   path* — a copy of `postgresql.conf` sitting somewhere else (like a
+   Homebrew package/formula directory you happened to `cd` into) is not
+   the live file the running server reads, and editing it silently does
+   nothing.
+
+2. **Edit that file**, find this line near "Shared Library Preloading":
+   ```
+   #shared_preload_libraries = ''    # (change requires restart)
+   ```
+   Uncomment it and set the value:
+   ```
+   shared_preload_libraries = 'pg_stat_statements'
+   ```
+
+3. **Restart** — the comment on that line is explicit that a reload
+   isn't sufficient here, unlike most settings:
+   ```bash
+   brew services restart postgresql@16
+   ```
+
+4. **Verify it actually took effect:**
+   ```sql
+   SHOW shared_preload_libraries;   -- should now show pg_stat_statements
+   ```
+   If it still comes back empty after a restart, re-run
+   `SHOW config_file;` and double check you edited that *exact* path —
+   an empty result after a restart almost always means the wrong file
+   was edited, not that the setting failed.
+
 ```sql
 -- Enable the extension (add to postgresql.conf: shared_preload_libraries = 'pg_stat_statements')
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
